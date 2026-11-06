@@ -1,5 +1,7 @@
 package chat.testai.chatai.controller;
 
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -21,6 +23,8 @@ import java.util.Map;
 public class ChatController {
 
     private final MiniMaxChatModel chatModel;
+
+    private final ChatMemory chatMemory = MessageWindowChatMemory.builder().build();
 
     public ChatController(MiniMaxChatModel chatModel) {
         this.chatModel = chatModel;
@@ -69,9 +73,29 @@ public class ChatController {
      */
     @PostMapping("/chat")
     public Map<String, String> chat(@RequestBody Map<String, String> request) {
+
+        String conversationId = request.get("conversationId");
         String message = request.get("message");
-        String response = chatModel.call(message);
-        return Map.of("response", response);
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new IllegalArgumentException("conversationId 不能为空");
+        }
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+
+        Message messageObj = new UserMessage(message);
+        chatMemory.add(conversationId, messageObj);
+        ChatResponse chatResponse = chatModel.call(new Prompt(chatMemory.get(conversationId)));
+        String answer = chatResponse.getResult()
+                .getOutput()
+                .getText();
+
+        chatMemory.add(
+                conversationId,
+                new AssistantMessage(answer)
+        );
+
+        return Map.of("response", answer);
     }
 
     /**
